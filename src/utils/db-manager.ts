@@ -50,12 +50,17 @@ interface DeletedFileRow {
 export class DatabaseManager {
   private db: SQLiteDatabase | null = null;
   private dbPath: string;
+  private isInitialized: boolean = false;
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || join(process.cwd(), 'db', 'screen_cut.db');
   }
 
   public async init(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
     try {
       await this.initDatabase();
       await this.createTables();
@@ -69,6 +74,7 @@ export class DatabaseManager {
         )
       `);
       
+      this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing database:', error);
       throw error;
@@ -77,8 +83,6 @@ export class DatabaseManager {
 
   private async initDatabase(): Promise<void> {
     try {
-      console.log('Initializing database at:', this.dbPath);
-      
       // 确保数据库目录存在
       const dbDir = dirname(this.dbPath);
       await mkdir(dbDir, { recursive: true });
@@ -89,8 +93,6 @@ export class DatabaseManager {
         driver: sqlite3.Database,
         mode: sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE
       });
-      
-      console.log('Database opened successfully');
     } catch (error) {
       console.error('Error initializing database:', error);
       throw error;
@@ -128,12 +130,6 @@ export class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_backup_path ON deleted_files(backup_path);
         CREATE INDEX IF NOT EXISTS idx_original_path ON backups(original_path);
       `);
-      
-      console.log('Tables created successfully');
-      
-      // 验证表是否创建成功
-      const tables = await this.db?.all("SELECT name FROM sqlite_master WHERE type='table'");
-      console.log('Available tables:', tables);
     } catch (error) {
       console.error('Error creating tables:', error);
       throw error;
@@ -144,16 +140,10 @@ export class DatabaseManager {
     try {
       if (!this.db) throw new Error('Database not initialized');
 
-      console.log('Adding file to database:', file.path);
       await this.db?.run(
         'INSERT OR REPLACE INTO files (path, size, mtime, last_accessed) VALUES (?, ?, ?, ?)',
         [file.path, file.size, file.mtime, file.lastAccessed]
       );
-      console.log('File added successfully');
-      
-      // 验证文件是否被添加
-      const row = await this.db?.get('SELECT * FROM files WHERE path = ?', file.path);
-      console.log('Verification - File in database:', row);
     } catch (error) {
       console.error('Error adding file:', error);
       throw error;
@@ -232,21 +222,8 @@ export class DatabaseManager {
     try {
       if (!this.db) throw new Error('Database not initialized');
 
-      console.log('Getting all files from database...');
-      console.log('Database path:', this.dbPath);
-      
-      // 检查表是否存在
-      const tableExists = await this.db?.get(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='files'"
-      );
-      console.log('Files table exists:', !!tableExists);
-
       const rows = await this.db?.all<FileRow[]>('SELECT * FROM files');
-      console.log(`Found ${rows.length} files in database`);
-      if (rows.length > 0) {
-        console.log('Sample file:', rows[0]);
-      }
-      
+
       return rows.map(row => ({
         path: row.path,
         size: row.size,
